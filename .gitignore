@@ -50,3 +50,6 @@ rsconnect/
 
 # Rendered README preview (rmarkdown byproduct)
 README.html
+
+# Excel lock files
+~$*
