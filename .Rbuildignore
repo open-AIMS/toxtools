@@ -12,3 +12,4 @@
 ^air\.toml$
 ^\.editorconfig$
 ^data-raw$
+^analysis$

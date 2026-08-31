@@ -98,3 +98,61 @@ was present while the workbook was open and caused `R CMD build` to fail with a
 permission error. The pattern `~$*` was added to `.gitignore`.
 
 ---
+**User:** can you make an analysis folder with an R script to read the test data,
+and fit a bayesnec model
+
+**Claude:** Created `analysis/` containing `fit_sea_urchin.R`. Two questions were
+asked; the answers were to fit the `mod_groups$decline` set (14 equations, with
+WAIC model averaging) and to write the script without running it.
+
+The script loads the shipped `sea_urchin` dataset, falling back to loading
+`data/sea_urchin.rda` directly when `toxtools` is not installed so it runs from
+a fresh clone, adds the vessel total, fits with
+
+```r
+bnec(
+  n_normal | trials(total) ~ crf(concentration, model = "decline"),
+  data = sea_urchin,
+  family = binomial(),
+  seed = 101,
+  chains = 4,
+  cores = 4
+)
+```
+
+then writes chain diagnostics, the model summary, the `dispersion()` diagnostic,
+the model-averaged N(S)EC with EC10 and EC50, and a fitted-curve plot to
+`analysis/output/`.
+
+Decisions recorded in comments in the script:
+
+- Concentration is used on its natural scale. The series includes a zero
+  control, so a log or square-root transform would either drop the controls or
+  require an arbitrary offset.
+- The response is supplied as measured counts, not as the percent-of-control
+  column that also appears on the laboratory form. `ecx(type = "absolute")`,
+  the default, already measures decline relative to the fitted control value one
+  posterior draw at a time; normalising beforehand discards the uncertainty in
+  the divisor and biases effective doses upwards.
+- `family = binomial()` is stated explicitly rather than left to `bnec()`'s
+  guess. `bnec()` sets `link = "identity"` for every family it accepts, so
+  `top`, `bot` and `nec` are returned on the proportion scale.
+- The binomial variance is fixed by the mean, so over-dispersion inflates
+  apparent precision rather than being absorbed by the fit. The script runs
+  `dispersion()` and notes `family = beta_binomial()` as the remedy if the
+  estimate excludes 1.
+
+`^analysis$` was added to `.Rbuildignore` and `analysis/output/` to `.gitignore`,
+the latter because a fitted brms object is large and is reproducible from the
+script. bayesnec, brms and ggplot2 were not added to `DESCRIPTION`, on the same
+reasoning applied to `data-raw/`: `analysis/` is excluded from the build.
+
+**Verification:** the fit was not run, as requested. Verified without fitting:
+the script parses (25 top-level expressions); every bayesnec function it calls
+is exported by the installed version, 2.1.3.7; `check_formula()` validates the
+model formula against the dataset; and `models()$decline` contains the expected
+14 equations. `R CMD check --no-manual` on the package returns `Status: OK`.
+The Excel lock file noted in the previous entry is no longer present, so the
+check ran against the repository itself rather than a copy.
+
+---

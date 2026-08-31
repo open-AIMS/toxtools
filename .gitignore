@@ -53,3 +53,6 @@ README.html
 
 # Excel lock files
 ~$*
+
+# Fitted model objects and analysis outputs
+analysis/output/
