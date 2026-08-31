@@ -1,8 +1,12 @@
 ## Concentration-response fit for the sea urchin copper reference test.
 ##
-## Fits the bayesnec "decline" model set (14 equations) to the `sea_urchin`
-## dataset and extracts the model-averaged no-effect and effect concentration
-## estimates. Run from the repository root:
+## Fits the bayesnec "decline" model set to the `sea_urchin` dataset and
+## extracts the model-averaged no-effect and effect concentration estimates.
+## Twelve of the 14 decline equations are fitted: neclin and ecxlin are dropped
+## by bnec() as invalid for a binomial response with an identity link, both
+## being unbounded in a response constrained to the unit interval.
+##
+## Run from the repository root:
 ##
 ##   Rscript analysis/fit_sea_urchin.R
 ##
@@ -10,7 +14,8 @@
 ## analysis/output/, which is excluded from version control because a fitted
 ## brms object is large and is reproducible from this script.
 ##
-## bayesnec, brms and ggplot2 are required. None is declared in DESCRIPTION:
+## bayesnec, brms, cmdstanr and ggplot2 are required, as is a CmdStan
+## installation. None is declared in DESCRIPTION:
 ## analysis/ is excluded from the package build (.Rbuildignore), so a user
 ## installing toxtools never needs them.
 
@@ -18,6 +23,19 @@ set.seed(101)
 
 library(bayesnec)
 library(ggplot2)
+
+## Fail here rather than after the first model has already been fitted. CmdStan
+## needs a working C++ toolchain, which on Windows means the mingw components
+## of Rtools. If this stops, run cmdstanr::check_cmdstan_toolchain(fix = TRUE)
+## once to install them, then rerun this script.
+if (!requireNamespace("cmdstanr", quietly = TRUE)) {
+  stop(
+    "cmdstanr is required by backend = \"cmdstanr\". Install it from ",
+    "https://mc-stan.org/cmdstanr, or set backend = \"rstan\" below.",
+    call. = FALSE
+  )
+}
+cmdstanr::check_cmdstan_toolchain()
 
 out_dir <- file.path("analysis", "output")
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
@@ -56,14 +74,23 @@ stopifnot(
 ## control beforehand instead discards the uncertainty in the divisor and
 ## biases effective doses upwards.
 ##
-## family is stated explicitly rather than left to bnec()'s guess. Note that
-## bnec() sets link = "identity" for every family it accepts, so `top`, `bot`
-## and `nec` are returned on the proportion scale and are directly readable as
-## proportions developing normally.
+## The link must be stated, not just the family. bnec() sets link = "identity"
+## when it guesses the family itself, but a family passed in keeps whatever link
+## that family defaults to, and binomial() defaults to logit. bnec() then drops
+## every model as invalid for a logit link and stops with
+##   "None of the model(s) specified are valid for a logit link."
+## The identity link is what makes `top`, `bot` and `nec` readable directly as
+## proportions developing normally, rather than on the logit scale.
+##
+## backend = "cmdstanr" compiles through CmdStan rather than rstan. It is the
+## faster of the two to compile and to sample, and it is passed straight through
+## to brm(): bnec() forwards all unmatched arguments. Change it to
+## backend = "rstan" to use the default brms backend instead.
 fit <- bnec(
   n_normal | trials(total) ~ crf(concentration, model = "decline"),
   data = sea_urchin,
-  family = binomial(),
+  family = binomial(link = "identity"),
+  backend = "cmdstanr",
   seed = 101,
   chains = 4,
   cores = 4
