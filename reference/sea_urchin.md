@@ -36,7 +36,8 @@ A data frame with 18 rows and 4 columns:
 ## Source
 
 Laboratory Form 149, 72 hr sea urchin development test, copper
-reference. Preparation script: `data-raw/sea_urchin.R`.
+reference. Prepared by `data-raw/sea_urchin.R`. The source workbook is
+not distributed with the package.
 
 ## Details
 
