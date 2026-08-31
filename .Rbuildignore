@@ -11,3 +11,5 @@
 ^superceded$
 ^air\.toml$
 ^\.editorconfig$
+^data-raw$
+^data/\.gitkeep$

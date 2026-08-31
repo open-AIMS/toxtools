@@ -31,3 +31,27 @@ is not installed on this machine; `R CMD build`/`R CMD check` were called
 directly instead, which is sufficient as the package contains no compiled code.
 
 ---
+**User:** add a data and data-raw folder
+
+**Claude:** Created `data/` and `data-raw/`. `data-raw/DATASET.R` holds a
+commented template for dataset preparation scripts. `data/` contains only a
+`.gitkeep` so the directory is tracked; the package ships no datasets yet.
+
+Added two entries to `.Rbuildignore`:
+
+```
+^data-raw$
+^data/\.gitkeep$
+```
+
+`data-raw` is excluded because preparation scripts are development sources, not
+package content. The `.gitkeep` exclusion prevents a hidden-file note from
+`R CMD check`; with it excluded, `R CMD build` reports
+`Removed empty directory 'toxtools/data'` and the directory never reaches the
+tarball. `R CMD check` re-run after the change: `Status: OK`, no notes.
+
+`LazyData: true` was deliberately not added to `DESCRIPTION`. It produces a
+check note while `data/` holds no datasets, so it should be added at the same
+time as the first `usethis::use_data()` call.
+
+---
