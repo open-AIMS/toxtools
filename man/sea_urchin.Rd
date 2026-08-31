@@ -16,7 +16,8 @@ levels: 0, 2.5, 5, 10, 20 and 40.}
 }
 \source{
 Laboratory Form 149, 72 hr sea urchin development test, copper
-reference. Preparation script: \code{data-raw/sea_urchin.R}.
+reference. Prepared by \code{data-raw/sea_urchin.R}. The source workbook is
+not distributed with the package.
 }
 \usage{
 sea_urchin

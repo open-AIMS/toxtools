@@ -4,6 +4,12 @@
 ## first of four copper reference-toxicant tests recorded in that workbook.
 ## Laboratory Form 149, 72 hr sea urchin development test.
 ##
+## The workbook itself is not held in this repository: source laboratory
+## records are excluded by .gitignore. Obtain it from the study authors and
+## place it at the path below to re-run this script. The prepared dataset it
+## produces, data/sea_urchin.rda, ships with the package, so nothing here is
+## needed to use `sea_urchin`.
+##
 ## readxl, dplyr and usethis are used here only. Packages used to prepare data
 ## are not declared in DESCRIPTION, because data-raw/ is excluded from the
 ## build (.Rbuildignore) and so is never needed by a user installing the
@@ -11,6 +17,16 @@
 
 xlsx_path <- file.path("data-raw", "sea_urchin", "Test data.xlsx")
 sheet <- "Copper Ref (4)"
+
+if (!file.exists(xlsx_path)) {
+  stop(
+    "source workbook not found at ",
+    xlsx_path,
+    ". ",
+    "It is excluded from version control; see the note at the top of this file.",
+    call. = FALSE
+  )
+}
 
 ## The sheet is a laboratory form, not a rectangular table. Column A and row 1
 ## are empty, the title block occupies rows 2-7, column names sit on row 8 in

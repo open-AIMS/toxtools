@@ -27,7 +27,8 @@
 #'   \item{n_abnormal}{Number of larvae scored as abnormally developed.}
 #' }
 #' @source Laboratory Form 149, 72 hr sea urchin development test, copper
-#'   reference. Preparation script: `data-raw/sea_urchin.R`.
+#'   reference. Prepared by `data-raw/sea_urchin.R`. The source workbook is
+#'   not distributed with the package.
 #' @examples
 #' # proportion developing normally in each vessel
 #' with(sea_urchin, n_normal / (n_normal + n_abnormal))

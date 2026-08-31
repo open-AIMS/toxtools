@@ -56,3 +56,7 @@ README.html
 
 # Fitted model objects and analysis outputs
 analysis/output/
+
+# Source laboratory workbooks are not distributed with the package.
+# See data-raw/sea_urchin.R for the sheet and cell range each dataset uses.
+data-raw/**/*.xlsx
