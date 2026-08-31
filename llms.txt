@@ -35,5 +35,10 @@ Copyright 2026 Australian Institute of Marine Science.
 Released under the [GPL (\>= 3)
 License](https://www.gnu.org/licenses/gpl-3.0.html).
 
-# 
+# Package index
+
+## All functions
+
+- [`sea_urchin`](https://open-aims.github.io/toxtools/reference/sea_urchin.md)
+  : Sea urchin larval development under copper exposure
 
