@@ -1,0 +1,23 @@
+Package: toxtools
+Title: Utilities for Ecotoxicological Data Handling and Analysis
+Version: 0.0.0.9000
+Authors@R: c(
+    person("Rebecca", "Fisher", , "r.fisher@aims.gov.au", role = c("aut", "cre")),
+    person("Australian Institute of Marine Science", role = c("cph", "fnd"))
+  )
+Description: A collection of utility functions supporting ecotoxicological
+    workflows, including data preparation, summarisation and helpers shared
+    across concentration-response and species sensitivity distribution
+    analyses.
+License: GPL (>= 3)
+URL: https://open-aims.github.io/toxtools/, https://github.com/open-AIMS/toxtools
+BugReports: https://github.com/open-AIMS/toxtools/issues
+Depends:
+    R (>= 4.1)
+Suggests:
+    covr,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Config/roxygen2/version: 8.0.0

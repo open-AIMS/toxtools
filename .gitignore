@@ -47,3 +47,6 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Rendered README preview (rmarkdown byproduct)
+README.html

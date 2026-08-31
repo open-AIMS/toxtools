@@ -1,0 +1,13 @@
+^_pkgdown\.yml$
+^docs$
+^pkgdown$
+^.*\.Rproj$
+^\.Rproj\.user$
+^README\.Rmd$
+^LICENSE\.md$
+^\.github$
+^prompts$
+^CLAUDE\.md$
+^superceded$
+^air\.toml$
+^\.editorconfig$
