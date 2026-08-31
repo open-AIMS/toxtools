@@ -1,0 +1,391 @@
+---
+title: "Concentration-response analysis"
+params:
+  manifest: ""
+  dev_package_dir: null
+format:
+  pdf:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    colorlinks: true
+    geometry: margin=2.5cm
+    fig-pos: "H"
+    include-in-header:
+      text: |
+        \usepackage{float}
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+knitr:
+  opts_chunk:
+    dev: "ragg_png"
+    dpi: 200
+---
+
+```{r setup}
+#| include: false
+options(width = 88)
+
+## toxtools is loaded by name when installed, and from source when the report
+## is being rendered from a development copy of the package. run_workbook()
+## decides which and passes the source directory through when it applies.
+if (!is.null(params$dev_package_dir) && nzchar(params$dev_package_dir)) {
+  pkgload::load_all(params$dev_package_dir, quiet = TRUE)
+} else {
+  library(toxtools)
+}
+library(bayesnec)
+library(ggplot2)
+
+m <- readRDS(params$manifest)
+
+## Sheet names are whatever the laboratory typed. In a PDF they are set by
+## LaTeX, where several ordinary characters are commands, so they are escaped
+## before being written into a heading.
+esc <- function(x) {
+  if (!knitr::is_latex_output()) {
+    return(x)
+  }
+  x <- gsub("\\\\", "\\\\textbackslash{}", x)
+  gsub("([&%$#_{}])", "\\\\\\1", x)
+}
+
+fmt <- function(x, digits = 3) {
+  formatC(signif(x, digits), format = "g", digits = digits, drop0trailing = TRUE)
+}
+
+## Names a set of equations and the weight they hold between them. Written as a
+## function because the number of equations is not known in advance and the
+## sentence has to read correctly for one as well as for several.
+carrying <- function(models, weight) {
+  paste0(
+    paste(models, collapse = ", "),
+    if (length(models) > 1) ", which between them carry " else ", which carries ",
+    sprintf("%.2f", 100 * sum(weight, na.rm = TRUE)),
+    " per cent of the weight in the model average"
+  )
+}
+```
+
+Workbook: **`r esc(m$workbook)`**
+
+Analysed `r format(m$created, "%d %B %Y")` with `bayesnec`
+`r m$bayesnec_version`, fitting the **`r m$model_set`** model set to
+`r m$predictor_transform`-transformed concentration.
+
+# What was analysed
+
+Each sheet of the workbook was examined for a row of column names giving a
+concentration column and a response column, with numeric data beneath it.
+Sheets holding such a block were analysed; the rest were skipped, for the
+reasons given below.
+
+```{r classification}
+cls <- m$classification
+## `analyse` is whether the sheet could be fitted; `analysed` is whether it
+## was. They differ when the run named a subset of sheets.
+shown <- if ("analysed" %in% names(cls)) cls$analysed else cls$analyse
+cls$analysed <- ifelse(shown, "yes", "no")
+cls$reason[is.na(cls$reason)] <- ""
+knitr::kable(
+  cls[, c("sheet", "analysed", "header_row", "n_rows", "n_levels", "response",
+          "reason")],
+  col.names = c("Sheet", "Analysed", "Names on row", "Rows",
+                "Concentrations", "Response", "Reason skipped"),
+  booktabs = TRUE, longtable = TRUE
+)
+```
+
+## How to read this report
+
+For each analysed sheet the report gives, in order: the data as they were read
+from the sheet; the equations that were fitted and the weight each carries in
+the model average; the no-effect and effect concentrations; the fitted curve;
+the individual equations behind the average; and the diagnostic checks.
+
+The **N(S)EC** is the model-averaged no-effect concentration. It combines the
+`nec` parameter of the threshold equations with the no-significant-effect
+concentration of the smooth ones. **EC10** and **EC50** are the concentrations
+at which the response has declined by 10 and 50 per cent from the fitted
+control value. All three are reported in the units recorded on the sheet, with
+a 95 per cent credible interval.
+
+The diagnostics decide whether those numbers can be relied on. Look for three
+things, in each case **in an equation that carries weight**: an R-hat above
+1.05, which means the sampler did not converge; over-dispersion, which means
+the counts vary more than a binomial response allows and the intervals are
+narrower than they should be; and chain traces that do not overlap or that
+drift, which mean the same as a high R-hat.
+
+The weight qualification matters, and it is why both checks are reported
+against the weight each equation carries. Every equation in the set is fitted,
+including ones whose shape suits the data badly. Such an equation fails the
+dispersion test whatever the data are doing, because the variation its curve
+cannot account for is counted as dispersion, and it is often the one the
+sampler struggles with as well. It is also given almost no weight in the model
+average, for the same reason. So a check it fails says something about that
+curve and nothing about the estimates reported here. Both tables below are
+ordered by weight, and the sentence above each warns only about equations
+carrying at least one per cent of it.
+
+```{r sections}
+#| output: asis
+child_src <- c(
+  "# `r esc(entry$sheet)`",
+  "",
+  "```{r}",
+  "#| include: false",
+  "obj <- readRDS(entry$fit_file)",
+  "sheet <- obj$sheet",
+  "est <- entry$estimates",
+  "diag <- workbook_diagnostics(obj)",
+  "## With no transformation the printed summary is already in the recorded",
+  "## units, and warning about a difference that does not exist would only",
+  "## confuse the reader.",
+  "scale_note <- if (obj$transform == 'identity') {",
+  "  'The estimates below are in the units recorded on the sheet.'",
+  "} else {",
+  "  paste0('The N(S)EC printed here is on the ', obj$funs$note, ' scale ',",
+  "         'the curve was fitted on, which is what the sampler worked ',",
+  "         'with. The next section gives the same quantity in the units ',",
+  "         'recorded on the sheet, so the two numbers differ.')",
+  "}",
+  "```",
+  "",
+  "## Data",
+  "",
+  "Read from sheet `r esc(sheet$sheet)`, column names on row",
+  "`r sheet$header_row`. Response: `r sheet$response`, fitted with",
+  "`r sheet$family_call`.",
+  "",
+  "```{r}",
+  "d <- sheet$data",
+  "if (!is.na(sheet$trials_var)) {",
+  "  d$proportion <- d[[sheet$y_var]] / d[[sheet$trials_var]]",
+  "}",
+  "agg <- do.call(rbind, lapply(split(d, d$concentration), function(g) {",
+  "  yv <- if ('proportion' %in% names(g)) g$proportion else g[[sheet$y_var]]",
+  "  data.frame(",
+  "    concentration = g$concentration[1], n = nrow(g),",
+  "    mean = mean(yv), min = min(yv), max = max(yv)",
+  "  )",
+  "}))",
+  "agg <- agg[order(agg$concentration), ]",
+  "knitr::kable(",
+  "  agg, row.names = FALSE, digits = 4, booktabs = TRUE,",
+  "  col.names = c('Concentration', 'Replicates', 'Mean', 'Minimum',",
+  "                'Maximum'),",
+  "  caption = 'Recorded response by concentration.'",
+  ")",
+  "```",
+  "",
+  "```{r}",
+  "#| fig-height: 3.2",
+  "#| fig-cap: 'Data as read from the sheet, before any model was fitted.'",
+  "plot_sheet_data(sheet, transform = obj$transform)",
+  "```",
+  "",
+  "`r if (length(sheet$notes)) paste0('Note: ', sheet$notes, collapse = ' ')`",
+  "",
+  "## Fitted model set",
+  "",
+  "The equations retained, the weight each carries in the model average, and",
+  "the fit of each. `r scale_note`",
+  "",
+  "```{r}",
+  "#| comment: ''",
+  "summary(obj$fit)",
+  "```",
+  "",
+  "## No-effect and effect concentrations",
+  "",
+  "```{r}",
+  "tab <- data.frame(",
+  "  Estimate = est$estimate,",
+  "  Value = fmt(est$value),",
+  "  Lower = fmt(est$lower),",
+  "  Upper = fmt(est$upper)",
+  ")",
+  "knitr::kable(",
+  "  tab, row.names = FALSE, booktabs = TRUE,",
+  "  col.names = c('Estimate', 'Median', 'Lower 95%', 'Upper 95%'),",
+  "  caption = paste0('Model-averaged estimates, in ',",
+  "                   sheet$labels$x, '.')",
+  ")",
+  "```",
+  "",
+  "## Model-averaged fit",
+  "",
+  "```{r}",
+  "#| fig-height: 4",
+  "#| fig-cap: 'Model-averaged curve with its 95% credible band. The vertical",
+  "#|   lines mark the N(S)EC and its credible interval.'",
+  "plot_workbook_fit(obj, estimates = est, title = NULL)",
+  "```",
+  "",
+  "## Individual equations",
+  "",
+  "```{r}",
+  "#| include: false",
+  "## The panels are laid out in two columns, so the figure has to grow with",
+  "## the number of equations. Left at a fixed height, a set of three would",
+  "## be stretched and a set of twelve would overflow the page, which with",
+  "## figures held in place rather than floated leaves a blank page behind.",
+  "fig_h <- min(8.4, 2.1 * ceiling(length(obj$fit$success_models) / 2) + 0.4)",
+  "```",
+  "",
+  "```{r}",
+  "#| fig-height: !expr fig_h",
+  "#| fig-cap: 'Each equation retained in the model set, fitted separately.",
+  "#|   The averaged curve above is a weighted combination of these.'",
+  "plot_workbook_fit(obj, all_models = TRUE, title = NULL)",
+  "```",
+  "",
+  "## Diagnostics",
+  "",
+  "```{r}",
+  "#| output: asis",
+  "rt <- diag$rhat_flags",
+  "hit <- if (is.null(rt)) rt[0, ] else rt[rt$flagged, , drop = FALSE]",
+  "if (is.null(rt) || nrow(hit) == 0) {",
+  "  cat('No equation was flagged for non-convergence; every R-hat is at or ',",
+  "      'below 1.05.', sep = '')",
+  "} else if (any(hit$warn)) {",
+  "  bad <- hit[hit$warn, , drop = FALSE]",
+  "  cat('**The sampler did not converge** for ',",
+  "      paste(sprintf('%s (weight %.2f)', bad$model, bad$weight),",
+  "            collapse = ', '),",
+  "      '. These equations carry weight in the model average, so the ',",
+  "      'estimates above should not be relied on until they are refitted ',",
+  "      'with more iterations.', sep = '')",
+  "} else {",
+  "  cat('The sampler did not converge for ',",
+  "      carrying(hit$model, hit$weight),",
+  "      ', so the estimates above are unaffected. An equation the sampler ',",
+  "      'struggles with is usually one that suits the data badly, which is ',",
+  "      'also why it is given no weight. Every other R-hat is at or below ',",
+  "      '1.05.', sep = '')",
+  "}",
+  "```",
+  "",
+  "```{r}",
+  "r2_names <- c('Model', 'R-squared', 'Standard error', 'Lower 95%',",
+  "              'Upper 95%')",
+  "if (!is.null(diag$r2)) {",
+  "  knitr::kable(",
+  "    diag$r2, row.names = FALSE, digits = 3, booktabs = TRUE,",
+  "    col.names = if (ncol(diag$r2) == length(r2_names)) {",
+  "      r2_names",
+  "    } else {",
+  "      colnames(diag$r2)",
+  "    },",
+  "    caption = 'Bayesian R-squared for each equation.'",
+  "  )",
+  "}",
+  "```",
+  "",
+  "```{r}",
+  "#| output: asis",
+  "dd <- diag$dispersion",
+  "if (is.null(dd)) {",
+  "  cat('The over-dispersion test does not apply to this response type.')",
+  "} else {",
+  "  warn_rows <- dd[dd$warn, , drop = FALSE]",
+  "  quiet_rows <- dd[dd$overdispersed & !dd$warn, , drop = FALSE]",
+  "  if (nrow(warn_rows)) {",
+  "    cat('**Over-dispersion is present.** ',",
+  "        paste(sprintf('%s (weight %.2f, dispersion %.2f, %.2f-%.2f)',",
+  "                      warn_rows$model, warn_rows$weight,",
+  "                      warn_rows$estimate, warn_rows$lower,",
+  "                      warn_rows$upper), collapse = '; '),",
+  "        '. These equations carry weight in the model average, so the ',",
+  "        'counts vary more than a binomial response allows and the ',",
+  "        'credible intervals reported above are narrower than they ',",
+  "        'should be. Refitting with a beta-binomial response is ',",
+  "        'warranted.', sep = '')",
+  "  } else if (nrow(quiet_rows)) {",
+  "    cat('No equation that carries weight in the model average is ',",
+  "        'over-dispersed. The test is failed by ',",
+  "        carrying(quiet_rows$model, quiet_rows$weight),",
+  "        '. An equation that fits badly fails this test because of its fit ',",
+  "        'rather than because of the data, so this is not a reason to ',",
+  "        'refit.', sep = '')",
+  "  } else {",
+  "    cat('No equation shows over-dispersion.')",
+  "  }",
+  "  cat('\\n\\n')",
+  "  show <- data.frame(",
+  "    dd$model, round(dd$weight, 3), round(dd$estimate, 2),",
+  "    round(dd$lower, 2), round(dd$upper, 2),",
+  "    ifelse(dd$overdispersed, 'yes', 'no'),",
+  "    ifelse(dd$warn, 'yes', 'no')",
+  "  )",
+  "  print(knitr::kable(",
+  "    show, row.names = FALSE, booktabs = TRUE,",
+  "    col.names = c('Model', 'Weight', 'Dispersion', 'Lower 95%',",
+  "                  'Upper 95%', 'Over-dispersed', 'Worth acting on'),",
+  "    caption = paste('Over-dispersion test, ordered by the weight each',",
+  "                    'equation carries in the model average. An interval',",
+  "                    'excluding 1 fails the test; it is worth acting on',",
+  "                    'only where the equation also carries weight.')",
+  "  ))",
+  "}",
+  "```",
+  "",
+  "### Chain traces",
+  "",
+  "One page per equation. The left column is the autocorrelation of each",
+  "chain, the right column the sampled values. Chains that overlap and show",
+  "no trend indicate the sampler converged. The parameters are on the",
+  "`r obj$funs$note` scale the curve was fitted on, so a `nec` trace is not",
+  "in the units recorded on the sheet.",
+  "",
+  "```{r}",
+  "#| fig-height: 7",
+  "#| fig-width: 6.5",
+  "check_chains(obj$fit)",
+  "```",
+  ""
+)
+
+for (entry in m$entries) {
+  cat(knitr::knit_child(text = child_src, envir = environment(),
+                        quiet = TRUE), sep = "\n")
+  cat("\n\n")
+}
+```
+
+# Method
+
+Curves were fitted with `bayesnec::bnec()`, which fits every equation in the
+requested model set and combines them by stacking weights into a single
+model-averaged prediction. The `r m$model_set` set was used. Equations that
+cannot be fitted to the response and link in use are dropped by `bnec()` before
+sampling; the equations that were retained are listed for each sheet above.
+
+Concentration was `r m$predictor_transform`-transformed before fitting. For a
+dilution series that includes a zero control, a square root is used rather than
+a logarithm, because the logarithm of zero is undefined and a log-scaled fit
+would either drop the controls or require an arbitrary amount added to every
+concentration. Estimates are back-transformed to the recorded units before
+reporting.
+
+Every family is fitted with an identity link, so that the fitted `top`, `bot`
+and `nec` parameters are on the scale of the response itself and can be read
+directly. Counts are fitted as counts rather than as a per cent of control:
+`bayesnec::ecx()` measures the decline against the fitted control value one
+posterior draw at a time, which keeps the uncertainty in the control, whereas
+dividing by the observed control mean beforehand discards it.
+
+```{r}
+#| output: asis
+cat("Fits are saved in `", esc(file.path(m$run_dir, "fits")),
+    "` and can be reloaded with `readRDS()`.", sep = "")
+```

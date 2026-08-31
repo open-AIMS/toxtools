@@ -13,3 +13,5 @@
 ^\.editorconfig$
 ^data-raw$
 ^analysis$
+^inputs$
+^outputs$
