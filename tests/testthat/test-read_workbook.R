@@ -120,3 +120,92 @@ test_that("the reader reproduces the hand-extracted sea_urchin dataset", {
   expect_identical(s$data$successes, sea_urchin$n_normal)
   expect_identical(s$data$failures, sea_urchin$n_abnormal)
 })
+
+test_that("a sheet counting only the animals that did not respond is refused", {
+  skip_if_not_installed("openxlsx")
+  dir <- withr::local_tempdir()
+  path <- file.path(dir, "fail_only.xlsx")
+  wb <- openxlsx::createWorkbook()
+  openxlsx::addWorksheet(wb, "FailOnly")
+  openxlsx::writeData(
+    wb,
+    "FailOnly",
+    data.frame(
+      concentration = rep(c(0, 1, 3, 9, 27), each = 2),
+      `No. Abnormal Development` = c(1, 2, 3, 4, 9, 8, 20, 22, 40, 38),
+      check.names = FALSE
+    )
+  )
+  openxlsx::saveWorkbook(wb, path, overwrite = TRUE)
+
+  # the number of trials is unknown without the matching count, so the sheet
+  # must be reported as unfittable here rather than accepted and then failing
+  # inside bnec() after the user has waited for the fit
+  cls <- classify_sheets(path)
+  expect_false(cls$analyse)
+  expect_match(cls$reason, "total number scored")
+  expect_error(read_analysis_sheet(path, "FailOnly"), "does not hold fittable")
+})
+
+## Builds a one-sheet workbook of counts, so that a single bad value can be
+## introduced without disturbing the shared fixture.
+counts_sheet <- function(dir, name, successes, trials_col = NULL) {
+  path <- file.path(dir, paste0(name, ".xlsx"))
+  d <- data.frame(
+    concentration = rep(c(0, 1, 3, 9, 27), each = 2),
+    `No. Normal Development` = successes,
+    check.names = FALSE
+  )
+  if (is.null(trials_col)) {
+    d[["No. Abnormal Development"]] <- rep(5, 10)
+  } else {
+    d[["Total scored"]] <- trials_col
+  }
+  wb <- openxlsx::createWorkbook()
+  openxlsx::addWorksheet(wb, "S")
+  openxlsx::writeData(wb, "S", d)
+  openxlsx::saveWorkbook(wb, path, overwrite = TRUE)
+  path
+}
+
+test_that("impossible counts are refused by name rather than left to brms", {
+  skip_if_not_installed("openxlsx")
+  dir <- withr::local_tempdir()
+
+  # more animals responding than were scored: a keying error on the form
+  p <- counts_sheet(
+    dir,
+    "toomany",
+    successes = c(rep(10, 9), 99),
+    trials_col = rep(20, 10)
+  )
+  expect_error(read_analysis_sheet(p, "S"), "more animals responded")
+
+  p2 <- counts_sheet(
+    dir,
+    "negative",
+    successes = c(rep(10, 9), -1),
+    trials_col = rep(20, 10)
+  )
+  expect_error(read_analysis_sheet(p2, "S"), "negative count")
+})
+
+test_that("rows left out for a missing value are reported, not dropped quietly", {
+  skip_if_not_installed("openxlsx")
+  dir <- withr::local_tempdir()
+  d <- data.frame(
+    concentration = rep(c(0, 1, 3, 9, 27), each = 2),
+    `No. Normal Development` = c(10, 11, 9, 10, 8, 7, 4, 4, 1, NA),
+    `No. Abnormal Development` = rep(5, 10),
+    check.names = FALSE
+  )
+  path <- file.path(dir, "gap.xlsx")
+  wb <- openxlsx::createWorkbook()
+  openxlsx::addWorksheet(wb, "S")
+  openxlsx::writeData(wb, "S", d)
+  openxlsx::saveWorkbook(wb, path, overwrite = TRUE)
+
+  s <- read_analysis_sheet(path, "S")
+  expect_identical(nrow(s$data), 9L)
+  expect_match(s$notes, "1 row was left out")
+})

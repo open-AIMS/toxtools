@@ -340,8 +340,17 @@ server <- function(input, output, session) {
       showNotification("Choose at least one sheet.", type = "warning")
       return()
     }
+    ## A numeric input that has been cleared reads as NA, which would reach
+    ## brms and fail there rather than here.
     if (!isTruthy(input$cores) || input$cores < 1) {
       showNotification("Cores must be at least 1.", type = "warning")
+      return()
+    }
+    if (!isTruthy(input$chains) || input$chains < 2) {
+      showNotification(
+        "At least 2 sampling chains are needed.",
+        type = "warning"
+      )
       return()
     }
 
@@ -420,7 +429,11 @@ server <- function(input, output, session) {
   ## One second is frequent enough for a job measured in tens of minutes, and
   ## cheap: it reads one small text file and lists one directory.
   observe({
-    if (identical(state(), "idle")) {
+    ## Nothing to poll before a run starts, and nothing once one has finished.
+    ## Without the second case the observer re-arms its timer on the
+    ## transition to "done" and then ticks once a second for the life of the
+    ## session.
+    if (identical(state(), "idle") || identical(state(), "done")) {
       return()
     }
     invalidateLater(1000, session)
@@ -483,7 +496,26 @@ server <- function(input, output, session) {
       ))
     }
     if (isTRUE(exit_status() == 0)) {
-      div(class = "text-success", "Finished.")
+      ## A run that skipped a sheet still exits cleanly, so "Finished" on its
+      ## own would be misleading. The reasons are in the Progress log and in
+      ## the report's first table.
+      failed <- tryCatch(names(manifest()$failures), error = function(e) NULL)
+      if (length(failed) > 0) {
+        tagList(
+          div(class = "text-success", "Finished."),
+          div(
+            class = "text-warning small",
+            paste0(
+              length(failed),
+              " sheet(s) were not analysed: ",
+              paste(failed, collapse = ", "),
+              ". The Progress tab gives the reason."
+            )
+          )
+        )
+      } else {
+        div(class = "text-success", "Finished.")
+      }
     } else {
       div(
         class = "text-danger",

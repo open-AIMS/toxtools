@@ -164,3 +164,140 @@ test_that("a convergence failure is qualified by the weight the equation carries
   expect_null(toxtools:::rhat_flag_table(NULL, w))
   expect_null(toxtools:::rhat_flag_table(list(), w))
 })
+
+test_that("axis labels strip a count prefix without eating the first word", {
+  lab <- function(successes, family = "binomial(link = \"identity\")") {
+    toxtools:::axis_label_y(list(
+      labels = list(successes = successes, response = NA_character_),
+      family_call = family
+    ))
+  }
+  expect_identical(
+    lab("No. Normal Development"),
+    "Proportion normal development"
+  )
+  expect_identical(lab("Number of survivors"), "Proportion survivors")
+
+  # the prefix has to be a separate word: these begin with the same letters
+  expect_identical(lab("Normal Development"), "Proportion normal development")
+  expect_identical(lab("Nauplii alive"), "Proportion nauplii alive")
+
+  # a continuous response keeps its heading as recorded
+  expect_identical(lab("Shoot length", "gaussian()"), "Shoot length")
+})
+
+test_that("a single equation is refused before anything is fitted", {
+  skip_if_not_installed("bayesnec")
+  skip_if_not_installed("brms")
+  path <- make_test_workbook()
+  s <- read_analysis_sheet(path, "Form")
+  # a model average is what the whole workflow reports, so one equation cannot
+  # be what is asked for; the message names the sets that can be
+  expect_error(
+    fit_analysis_sheet(s, model = "nec3param"),
+    "fits a single equation"
+  )
+  expect_error(fit_analysis_sheet(s, model = "nec3param"), "decline")
+})
+
+## The parts of an analysis_fit that decide whether a saved one can be reused.
+stub_fit <- function(sheet, model = "decline", transform = "sqrt") {
+  structure(
+    list(sheet = list(sheet = sheet), model_set = model, transform = transform),
+    class = "analysis_fit"
+  )
+}
+
+test_that("a saved fit is reused only when it answers the same question", {
+  obj <- stub_fit("Copper Ref (4)")
+  expect_true(
+    toxtools:::cached_fit_usable(obj, "decline", "sqrt", "Copper Ref (4)")
+  )
+
+  # a different model set or transformation is a different model
+  expect_false(toxtools:::cached_fit_usable(
+    obj,
+    "all",
+    "sqrt",
+    "Copper Ref (4)"
+  ))
+  expect_false(
+    toxtools:::cached_fit_usable(obj, "decline", "log", "Copper Ref (4)")
+  )
+
+  # safe_name() is not one-to-one, so two sheets can share a cache file name;
+  # without the sheet check the second would be reported using the first's fit
+  expect_identical(
+    toxtools:::safe_name("Test (1)"),
+    toxtools:::safe_name("Test 1")
+  )
+  expect_false(toxtools:::cached_fit_usable(obj, "decline", "sqrt", "Test 1"))
+
+  # nothing on disk, or something else entirely
+  expect_false(toxtools:::cached_fit_usable(NULL, "decline", "sqrt", "x"))
+  expect_false(
+    toxtools:::cached_fit_usable(
+      list(model_set = "decline"),
+      "decline",
+      "sqrt",
+      "x"
+    )
+  )
+})
+
+test_that("axis breaks drop values the transformation cannot place", {
+  log_funs <- toxtools:::predictor_funs("log")
+  conc <- rep(c(0, 2.5, 5, 10, 20, 40), each = 3)
+
+  # a zero control has no place on a log axis: kept, it is drawn at -Inf
+  brks <- toxtools:::axis_breaks(conc, log_funs)
+  expect_false(0 %in% brks)
+  expect_true(all(is.finite(log_funs$fwd(brks))))
+
+  # and where pretty() chooses them, a -Inf in the range collapses the set
+  many <- c(0, seq(1, 100, length.out = 24))
+  brks_many <- toxtools:::axis_breaks(many, log_funs)
+  expect_gt(length(brks_many), 3)
+  expect_true(all(is.finite(log_funs$fwd(brks_many))))
+
+  # the square root places zero perfectly well and must keep it
+  sqrt_funs <- toxtools:::predictor_funs("sqrt")
+  expect_true(0 %in% toxtools:::axis_breaks(conc, sqrt_funs))
+})
+
+test_that("a sheet that fails is recorded, and a run of only failures stops", {
+  skip_if_not_installed("openxlsx")
+  skip_if_not_installed("bayesnec")
+  skip_if_not_installed("brms")
+
+  # this sheet passes classification -- it names a concentration and a
+  # response column and has enough levels -- but fails when read, because more
+  # animals responded than were scored. Nothing is fitted, so the test is cheap
+  # while still exercising the per-sheet recovery.
+  in_dir <- withr::local_tempdir()
+  out_dir <- withr::local_tempdir()
+  path <- file.path(in_dir, "bad.xlsx")
+  wb <- openxlsx::createWorkbook()
+  openxlsx::addWorksheet(wb, "Bad")
+  openxlsx::writeData(
+    wb,
+    "Bad",
+    data.frame(
+      concentration = rep(c(0, 1, 3, 9, 27), each = 2),
+      `No. Normal Development` = c(rep(10, 9), 99),
+      `Total scored` = rep(20, 10),
+      check.names = FALSE
+    )
+  )
+  openxlsx::saveWorkbook(wb, path, overwrite = TRUE)
+
+  expect_true(classify_sheets(path)$analyse)
+  expect_error(
+    suppressMessages(run_workbook(path, output_dir = out_dir, render = FALSE)),
+    "no sheet could be analysed"
+  )
+
+  # the reason is left where the user will look for it
+  cls <- utils::read.csv(file.path(out_dir, "bad", "sheet_classification.csv"))
+  expect_match(cls$reason[cls$sheet == "Bad"], "more animals responded")
+})

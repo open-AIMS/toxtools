@@ -32,7 +32,23 @@ run_app <- function(
   launch_browser = TRUE,
   ...
 ) {
-  check_pkgs("shiny", "bslib", "DT", "callr", "readxl", "bayesnec", "ggplot2")
+  ## Everything the app and the process it starts will need, named in one
+  ## message at the point the user asks for the app, rather than found one at
+  ## a time in a background log after a fit has run.
+  check_pkgs(
+    "shiny",
+    "bslib",
+    "DT",
+    "callr",
+    "readxl",
+    "bayesnec",
+    "brms",
+    "ggplot2",
+    "quarto",
+    "knitr",
+    "rmarkdown",
+    "ragg"
+  )
 
   ## Both folders are made absolute before the app starts. shiny::runApp()
   ## changes the working directory to the app's own folder inside the

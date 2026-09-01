@@ -10,7 +10,11 @@ axis_label_y <- function(sheet) {
   if (is.na(lab)) {
     return("Response")
   }
-  lab <- trimws(sub("^(no\\.?|number of|n)\\s*", "", lab, ignore.case = TRUE))
+  ## \\s+ rather than \\s*: the count prefix has to be a separate word.
+  ## Without the space required, the alternation strips the first letters of a
+  ## heading that merely begins with them, turning "Normal Development" into
+  ## "rmal Development" and "Nauplii alive" into "auplii alive".
+  lab <- trimws(sub("^(no\\.?|number of|n)\\s+", "", lab, ignore.case = TRUE))
   if (grepl("binomial", sheet$family_call, fixed = TRUE)) {
     paste0("Proportion ", tolower(lab))
   } else {

@@ -409,3 +409,106 @@ noted.
   including the singular case on Copper Ref.
 
 ---
+
+## Session: excel-workbook-workflow (review cycle)
+Date: 2026-09-01
+Model: Claude Opus 5 (claude-opus-5)
+
+### Prompts and Responses
+
+**User:** Please review this PR ... in a loop: review, fix, redraft, re-review,
+for 10 cycles or until no more issues are found.
+
+**Claude:** Nine cycles were run over the branch. What follows is the defects
+that survived into fixes, and the reasoning; defects introduced and removed
+inside the loop are not recorded.
+
+#### Defects found and fixed
+
+**Axis labels lost their first letters.** `axis_label_y()` stripped a leading
+count prefix with `sub("^(no\\.?|number of|n)\\s*", ...)`. With `\s*` the
+alternation matched the opening letters of a heading that merely began with
+them, so "Normal Development" became "rmal Development" and "Nauplii alive"
+became "auplii alive". The prefix must be a separate word: `\s+`.
+
+**A sheet counting only the animals that did not respond was accepted.** The
+header search accepts any response column, so a sheet naming only
+"No. Abnormal Development" passed and was listed as fittable with
+`response = NA`. The number of trials is unknown without the matching count or
+a total, so nothing could be fitted; the failure surfaced only inside `bnec()`,
+after the user had waited. `sheet_spec()` now consults `response_spec()` and
+rejects the sheet with a reason.
+
+**The fit cache was keyed on a name that is not unique.** The cache file is
+`safe_name(sheet).rds`, and `safe_name()` is not one-to-one: "Test (1)" and
+"Test 1" both give `Test_1`. The staleness check compared model set and
+transformation only, so the second sheet would have been reported using the
+first sheet's fit. The rule now also compares the sheet name, and was extracted
+into `cached_fit_usable()` so that it could be tested without fitting.
+
+**One sheet's failure discarded the whole run.** A run covers several sheets
+and takes hours. An error on the third of four aborted the loop, losing the
+sheets not yet reached and producing no report, when the sheets that had
+succeeded were still worth having. Each sheet is now attempted inside
+`tryCatch()`; the reason is recorded in `sheet_classification.csv` and the
+manifest, the remaining sheets are still fitted, and the run stops only when no
+sheet at all could be analysed. The classification is written before that stop,
+because the error message sends the user to that file.
+
+**Render dependencies were discovered after the fitting.** `run_workbook()`
+checked `quarto` but not `knitr`, `rmarkdown` or `ragg`, which the report needs,
+and nothing checked for LaTeX. All are now checked before any fitting starts;
+LaTeX warns rather than stops, because Quarto searches for a TeX distribution
+in places `Sys.which()` does not.
+
+**A LaTeX escape leaked into the rendered report.** `esc()` was applied to a
+path that is then written inside a markdown code span, which pandoc escapes on
+its own, so the path rendered as `outputs/Test\_data/fits`. Text inside a code
+span must not be pre-escaped.
+
+**`axis_breaks()` produced breaks a log axis cannot draw.** A zero control
+became a break at `-Inf`, and where `pretty()` chooses the breaks it dragged the
+range to `-Inf` and collapsed the set from six values to two. Values whose
+transform is not finite are now dropped.
+
+**Impossible counts reached the sampler.** Counts typed into a form can be
+wrong. More animals responding than were scored, or a negative count, now stop
+with a message naming the sheet and the problem, rather than surfacing as a
+Stan initialisation failure after the fit has started.
+
+**Rows dropped for a missing value were dropped silently.** In a workflow whose
+purpose is reading forms filled in by hand, discarding a record without saying
+so is not acceptable. The count is now carried out of `data_block()` and
+reported as a note.
+
+**A single-equation model set degraded quietly.** `bnec()` returns a
+`bayesnecfit` rather than a `bayesmanecfit` when one equation is asked for, and
+everything downstream reads fields only the latter has. The result was not an
+error but a report with empty diagnostics. It is now refused before fitting,
+with a message naming the model sets, and again afterwards if only one equation
+survived.
+
+**The app could report success on a partial failure.** A run that skipped a
+sheet still exits cleanly, so the status read "Finished" with no hint. It now
+names the sheets that were not analysed.
+
+Smaller corrections: the app polled once a second for the life of the session
+after a run finished; a vector model set printed as `nec3paramecxexp` in the
+progress message; a cleared "chains" box reached brms as `NA`.
+
+#### Verification
+
+- 120 tests pass, none skipped, up from 91. Every fix above has a regression
+  test except the LaTeX and render-dependency guards, which depend on what is
+  installed, and the app status text.
+- `R CMD check --no-manual`: 0 errors, 0 warnings, 0 notes.
+- Reading `Copper Ref (4)` still reproduces `data/sea_urchin.rda` exactly, and
+  the saved fits from the earlier run are still recognised as reusable.
+- The report was re-rendered from those fits.
+
+Three `bayesnec` traps found during this work were recorded in section 11 of
+the working-directory `CLAUDE.md`: the differing scales of its estimates and
+its plot data, `dispersion()` requiring a single fit, and judging the
+diagnostics against model weight.
+
+---

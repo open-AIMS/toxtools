@@ -95,7 +95,8 @@ R-hat, Bayesian R-squared, an over-dispersion test and the chain traces.
 
 Fitting takes roughly twenty to forty minutes per sheet. Each fit is saved as
 it completes and reused on a later run, so an interrupted run is resumed by
-calling `run_workbook()` again.
+calling `run_workbook()` again. A sheet that cannot be analysed does not stop
+the run: the reason is reported and the remaining sheets are still fitted.
 
 The functions can also be used one step at a time:
 
@@ -108,11 +109,13 @@ toxtools::workbook_estimates(fit)
 toxtools::plot_workbook_fit(fit)
 ```
 
-`bayesnec`, `brms`, `readxl`, `ggplot2` and `quarto` are needed for this, and
-`shiny`, `bslib`, `DT` and `callr` for the app. All are declared in
-`Suggests`, so installing `toxtools` does not install them. The PDF report
-also needs a LaTeX installation; `tinytex::install_tinytex()` provides one, or
-choose the web page format instead.
+`bayesnec`, `brms` and `readxl` are needed to fit, `ggplot2`, `quarto`,
+`knitr`, `rmarkdown` and `ragg` to report, and `shiny`, `bslib`, `DT` and
+`callr` for the app. All are declared in `Suggests`, so installing `toxtools`
+does not install them, and all are checked before any fitting starts rather
+than after it. The PDF report also needs a LaTeX installation;
+`tinytex::install_tinytex()` provides one, or choose the web page format
+instead.
 
 ## Further Information
 

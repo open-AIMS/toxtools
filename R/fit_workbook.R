@@ -82,6 +82,29 @@ fit_analysis_sheet <- function(
     )
   )
 
+  ## Everything downstream -- the model weights, the per-equation panels, the
+  ## dispersion and convergence tables -- reads fields that only a
+  ## bayesmanecfit has. bnec() returns the single-model bayesnecfit instead
+  ## when just one equation is asked for, and the result is not an error but a
+  ## report with empty diagnostics, which is worse. The check is made before
+  ## fitting so that it costs nothing.
+  ## The list of set names is only usable as a rejection test when it was
+  ## actually obtained. Treating a failed lookup as an empty list would reject
+  ## every valid set, including the default.
+  groups <- tryCatch(names(bayesnec::models()), error = function(e) character())
+  if (length(groups) > 0 && length(model) == 1 && !model %in% groups) {
+    stop(
+      "model = \"",
+      model,
+      "\" fits a single equation, and this workflow ",
+      "reports a model average. Name two or more equations, or one of the ",
+      "model sets: ",
+      paste(groups, collapse = ", "),
+      ".",
+      call. = FALSE
+    )
+  }
+
   fit <- bayesnec::bnec(
     formula = form,
     data = d,
@@ -91,6 +114,18 @@ fit_analysis_sheet <- function(
     cores = cores,
     ...
   )
+
+  ## A model set can still come back as a single fit, when every other
+  ## equation in it failed to fit the data.
+  if (!inherits(fit, "bayesmanecfit")) {
+    stop(
+      "only one equation could be fitted to sheet '",
+      sheet$sheet,
+      "', so there is no model average to report. Inspect the data, or fit ",
+      "it directly with bayesnec::bnec().",
+      call. = FALSE
+    )
+  }
 
   structure(
     list(

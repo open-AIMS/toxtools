@@ -55,8 +55,15 @@ Fitting is the slow step, taking roughly twenty to forty minutes per sheet
 on four cores. Each fit is saved as it completes, and a fit that is already
 saved is reused rather than repeated, so an interrupted run can be restarted
 by calling the function again. A saved fit is reused only when it was fitted
-with the same model set and the same predictor transformation; changing
-either causes it to be refitted.
+with the same model set, the same predictor transformation and the same
+sheet; changing any of them causes it to be refitted.
+
+A sheet that cannot be analysed does not stop the run. The reason is
+reported, recorded in \code{sheet_classification.csv} and carried in the
+manifest, and the remaining sheets are still fitted and reported; a run
+stops only when no sheet at all could be analysed. A run covering several
+sheets takes hours, and discarding the ones that worked because a later one
+failed would waste them.
 }
 \examples{
 \dontrun{

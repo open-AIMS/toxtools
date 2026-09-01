@@ -291,6 +291,22 @@ sheet_spec <- function(path, sheet) {
     return(no(paste0("only ", nrow(d), " data rows; at least 5 are needed")))
   }
 
+  ## The header search accepts a row naming a response column of any kind,
+  ## including one that counts only the animals that did not respond. That is
+  ## not enough to fit: without the matching count, or a total scored, the
+  ## number of trials is unknown. Rejecting it here rather than leaving
+  ## response_spec()'s NA to travel onwards is what stops the sheet being
+  ## listed as fittable and then failing inside bnec() after the user has
+  ## waited for it.
+  resp <- response_spec(d)
+  if (is.na(resp$y_var)) {
+    return(no(paste(
+      "a response column was found, but not one that can be fitted: a count",
+      "of the animals that did not respond needs either the matching count of",
+      "those that did, or the total number scored"
+    )))
+  }
+
   c(
     list(
       analyse = TRUE,
@@ -304,7 +320,7 @@ sheet_spec <- function(path, sheet) {
       labels = header_labels(grid, best$header_row, best$roles),
       data = d
     ),
-    response_spec(d)
+    resp
   )
 }
 
@@ -394,7 +410,13 @@ data_block <- function(grid, header_row, roles) {
 
   ## Drop rows where any retained column is missing. A partly filled row is a
   ## data entry that was never completed, not an observation.
+  ##
+  ## How many were dropped is carried out with the data. Discarding a
+  ## laboratory record silently is not acceptable in a workflow whose purpose
+  ## is to read forms filled in by hand, so the count is reported to the user
+  ## and printed in the report.
   complete <- stats::complete.cases(out)
+  n_dropped <- sum(!complete)
   out <- out[complete, , drop = FALSE]
   if (nrow(out) == 0) {
     return(NULL)
@@ -409,6 +431,7 @@ data_block <- function(grid, header_row, roles) {
   }
   out$replicate <- as.integer(out$replicate)
   rownames(out) <- NULL
+  attr(out, "n_dropped") <- n_dropped
   out
 }
 
@@ -522,12 +545,44 @@ read_analysis_sheet <- function(path, sheet) {
   }
 
   notes <- character(0)
+  n_dropped <- attr(spec$data, "n_dropped")
+  if (isTRUE(n_dropped > 0)) {
+    notes <- c(
+      notes,
+      paste0(
+        n_dropped,
+        if (n_dropped == 1) " row was" else " rows were",
+        " left out because a value was missing from them"
+      )
+    )
+  }
+
   if (grepl("binomial", spec$family_call, fixed = TRUE)) {
     if (any(d[[spec$trials_var]] <= 0)) {
       stop(
         "sheet '",
         sheet,
         "' has rows where no animals were scored.",
+        call. = FALSE
+      )
+    }
+    ## Counts read from a form filled in by hand can be impossible. Caught
+    ## here, the message names the sheet and the problem; left to brms, it
+    ## surfaces as a Stan initialisation failure after the fit has started.
+    if (any(d[[spec$y_var]] < 0)) {
+      stop(
+        "sheet '",
+        sheet,
+        "' has a negative count.",
+        call. = FALSE
+      )
+    }
+    if (any(d[[spec$y_var]] > d[[spec$trials_var]])) {
+      stop(
+        "sheet '",
+        sheet,
+        "' has rows where more animals responded than were ",
+        "scored. Check the response and total columns.",
         call. = FALSE
       )
     }

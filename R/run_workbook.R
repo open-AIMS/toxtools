@@ -8,6 +8,81 @@ safe_name <- function(x) {
   ifelse(nzchar(x), x, "sheet")
 }
 
+## Whether a saved fit answers the question being asked now.
+##
+## Model set and predictor transformation both change the fitted model, so a
+## saved object that used different ones is stale rather than a cache hit. The
+## sheet name is checked as well, because the file name is safe_name(sheet) and
+## that is not one-to-one: "Test (1)" and "Test 1" both give Test_1. Without
+## the check the second sheet would silently be reported using the first
+## sheet's fit.
+cached_fit_usable <- function(obj, model, predictor_transform, sheet) {
+  inherits(obj, "analysis_fit") &&
+    identical(obj$model_set, model) &&
+    identical(obj$transform, predictor_transform) &&
+    identical(obj$sheet$sheet, sheet)
+}
+
+## Read, fit and summarise one sheet, reusing a saved fit where there is a
+## usable one. Extracted from run_workbook()'s loop so that the loop can catch
+## a failure on one sheet without the recovery logic obscuring the work.
+analyse_one_sheet <- function(
+  path,
+  sheet_name,
+  fit_dir,
+  run_dir,
+  model,
+  predictor_transform,
+  ecx_vals,
+  refit,
+  ...
+) {
+  sheet <- read_analysis_sheet(path, sheet_name)
+  for (n in sheet$notes) {
+    message("  note: ", n)
+  }
+
+  fit_file <- file.path(fit_dir, paste0(safe_name(sheet_name), ".rds"))
+  obj <- NULL
+  if (file.exists(fit_file) && !refit) {
+    obj <- tryCatch(readRDS(fit_file), error = function(e) NULL)
+    if (cached_fit_usable(obj, model, predictor_transform, sheet_name)) {
+      message("  using the saved fit in ", fit_file)
+    } else {
+      obj <- NULL
+    }
+  }
+  if (is.null(obj)) {
+    message(
+      "  fitting the ",
+      paste(model, collapse = ", "),
+      " model set; this takes some time"
+    )
+    obj <- fit_analysis_sheet(
+      sheet,
+      model = model,
+      predictor_transform = predictor_transform,
+      ...
+    )
+    saveRDS(obj, fit_file)
+    message("  fit saved to ", fit_file)
+  }
+
+  est <- workbook_estimates(obj, ecx_vals = ecx_vals)
+  utils::write.csv(
+    est,
+    file.path(run_dir, paste0(safe_name(sheet_name), "_estimates.csv")),
+    row.names = FALSE
+  )
+  print(est)
+
+  list(
+    sheet = sheet_name,
+    fit_file = normalizePath(fit_file, winslash = "/"),
+    estimates = est
+  )
+}
+
 #' Analyse every sheet in a workbook and write a report
 #'
 #' The single call that runs the whole workflow. It finds the workbook, decides
@@ -19,8 +94,15 @@ safe_name <- function(x) {
 #' on four cores. Each fit is saved as it completes, and a fit that is already
 #' saved is reused rather than repeated, so an interrupted run can be restarted
 #' by calling the function again. A saved fit is reused only when it was fitted
-#' with the same model set and the same predictor transformation; changing
-#' either causes it to be refitted.
+#' with the same model set, the same predictor transformation and the same
+#' sheet; changing any of them causes it to be refitted.
+#'
+#' A sheet that cannot be analysed does not stop the run. The reason is
+#' reported, recorded in `sheet_classification.csv` and carried in the
+#' manifest, and the remaining sheets are still fitted and reported; a run
+#' stops only when no sheet at all could be analysed. A run covering several
+#' sheets takes hours, and discarding the ones that worked because a later one
+#' failed would waste them.
 #'
 #' @param path Path to the workbook. The default takes the single workbook in
 #'   `inputs/`.
@@ -58,7 +140,14 @@ run_workbook <- function(
 ) {
   check_pkgs("readxl", "bayesnec", "brms", "ggplot2")
   if (render) {
-    check_pkgs("quarto")
+    ## Every package the render needs is checked here, before the fitting,
+    ## rather than being discovered by Quarto afterwards. Fitting is the part
+    ## that takes hours; finding out at the end of it that knitr is missing
+    ## wastes all of it.
+    check_pkgs("quarto", "knitr", "rmarkdown", "ragg")
+    if (identical(format, "pdf")) {
+      warn_no_latex()
+    }
   }
   if (!file.exists(path)) {
     stop("workbook not found: ", path, call. = FALSE)
@@ -104,64 +193,77 @@ run_workbook <- function(
     )
   }
 
+  ## Each sheet is attempted on its own. A run covers several sheets and takes
+  ## hours; letting one sheet's failure abort the loop would discard the fits
+  ## that had not yet been reached and produce no report at all, when the
+  ## sheets that did work are still worth having. What failed is recorded and
+  ## reported rather than passed over.
   entries <- list()
+  failures <- list()
   for (i in seq_along(sheets)) {
     s <- sheets[i]
     message(sprintf("\n[%d/%d] %s", i, length(sheets), s))
-    sheet <- read_analysis_sheet(path, s)
-    for (n in sheet$notes) {
-      message("  note: ", n)
-    }
-
-    fit_file <- file.path(fit_dir, paste0(safe_name(s), ".rds"))
-    obj <- NULL
-    if (file.exists(fit_file) && !refit) {
-      obj <- tryCatch(readRDS(fit_file), error = function(e) NULL)
-      ## A saved fit is only reusable if it answers the same question. Model
-      ## set and transformation both change the fitted model, so a mismatch
-      ## means the saved object is stale rather than a cache hit.
-      stale <- is.null(obj) ||
-        !identical(obj$model_set, model) ||
-        !identical(obj$transform, predictor_transform)
-      if (stale) {
-        obj <- NULL
-      } else {
-        message("  using the saved fit in ", fit_file)
-      }
-    }
-    if (is.null(obj)) {
-      message("  fitting the ", model, " model set; this takes some time")
-      obj <- fit_analysis_sheet(
-        sheet,
+    entry <- tryCatch(
+      analyse_one_sheet(
+        path = path,
+        sheet_name = s,
+        fit_dir = fit_dir,
+        run_dir = run_dir,
         model = model,
         predictor_transform = predictor_transform,
+        ecx_vals = ecx_vals,
+        refit = refit,
         ...
-      )
-      saveRDS(obj, fit_file)
-      message("  fit saved to ", fit_file)
+      ),
+      error = function(e) {
+        message("  this sheet was not analysed: ", conditionMessage(e))
+        structure(conditionMessage(e), class = "sheet_failure")
+      }
+    )
+    if (inherits(entry, "sheet_failure")) {
+      failures[[s]] <- as.character(entry)
+    } else {
+      entries[[length(entries) + 1]] <- entry
     }
-
-    est <- workbook_estimates(obj, ecx_vals = ecx_vals)
-    utils::write.csv(
-      est,
-      file.path(run_dir, paste0(safe_name(s), "_estimates.csv")),
-      row.names = FALSE
-    )
-    print(est)
-
-    entries[[length(entries) + 1]] <- list(
-      sheet = s,
-      fit_file = normalizePath(fit_file, winslash = "/"),
-      estimates = est
-    )
   }
 
   ## Which sheets were actually analysed is not the same question as which
-  ## could be: the caller can name a subset. The report needs both, so that a
-  ## sheet that was fittable but was not asked for is not reported as
-  ## unfittable.
-  cls$analysed <- cls$sheet %in% sheets
+  ## could be: the caller can name a subset, and a sheet can fail. The report
+  ## needs all three, so that a sheet that was fittable but was not asked for
+  ## is not reported as unfittable.
+  ##
+  ## This is recorded and written out before the run is allowed to fail.
+  ## Stopping first would leave the file the error message sends the user to
+  ## holding no reason at all.
+  cls$analysed <- cls$sheet %in%
+    vapply(entries, function(e) e$sheet, character(1))
   cls$reason[cls$analyse & !cls$analysed] <- "not requested in this run"
+  for (s in names(failures)) {
+    cls$reason[cls$sheet == s] <- failures[[s]]
+  }
+  utils::write.csv(
+    cls,
+    file.path(run_dir, "sheet_classification.csv"),
+    row.names = FALSE
+  )
+
+  if (length(entries) == 0) {
+    stop(
+      "no sheet could be analysed. The reason for each is above, and in ",
+      file.path(run_dir, "sheet_classification.csv"),
+      call. = FALSE
+    )
+  }
+  if (length(failures) > 0) {
+    message(
+      "\n",
+      length(failures),
+      " of ",
+      length(sheets),
+      " sheets were not analysed: ",
+      paste(names(failures), collapse = ", ")
+    )
+  }
 
   manifest <- list(
     workbook = basename(path),
@@ -169,6 +271,7 @@ run_workbook <- function(
     run_dir = normalizePath(run_dir, winslash = "/"),
     classification = cls,
     entries = entries,
+    failures = failures,
     model_set = model,
     predictor_transform = predictor_transform,
     ecx_vals = ecx_vals,

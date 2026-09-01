@@ -386,6 +386,9 @@ dividing by the observed control mean beforehand discards it.
 
 ```{r}
 #| output: asis
-cat("Fits are saved in `", esc(file.path(m$run_dir, "fits")),
+## No esc() here: the path is written inside a code span, which pandoc
+## escapes on its own. Escaping first leaves the escape visible, so a path
+## holding an underscore renders as "Test\\_data".
+cat("Fits are saved in `", file.path(m$run_dir, "fits"),
     "` and can be reloaded with `readRDS()`.", sep = "")
 ```
