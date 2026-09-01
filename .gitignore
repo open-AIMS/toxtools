@@ -60,3 +60,10 @@ analysis/output/
 # Source laboratory workbooks are not distributed with the package.
 # See data-raw/sea_urchin.R for the sheet and cell range each dataset uses.
 data-raw/**/*.xlsx
+
+# Workbooks placed in inputs/ are laboratory records and are not distributed
+# with the package; outputs/ holds fitted objects and rendered reports, which
+# are large and are reproducible from the workbook.
+/inputs/*
+!/inputs/README.md
+/outputs/
