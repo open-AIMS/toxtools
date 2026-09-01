@@ -69,6 +69,31 @@
 <p>Documentation is available on the <a href="https://open-aims.github.io/toxtools/">project page</a> and the <a href="https://open-aims.github.io/toxtools/reference/">reference page</a>.</p>
 </div>
 <div class="section level2">
+<h2 id="analysing-a-workbook-of-concentration-response-data">Analysing a workbook of concentration-response data<a class="anchor" aria-label="anchor" href="#analysing-a-workbook-of-concentration-response-data"></a>
+</h2>
+<p><code>toxtools</code> can take an Excel workbook of toxicity test results, work out which of its sheets hold data that can be fitted, fit the <code>bayesnec</code> model set to each of them, and write a single PDF report. It is intended to be usable without writing R code.</p>
+<p>Put the workbook in the <code>inputs</code> folder, then run</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">toxtools</span><span class="fu">::</span><span class="fu"><a href="reference/run_app.html">run_app</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+<p>which opens a page in the browser: choose the workbook, tick the sheets to analyse, press Run, watch the progress, and download the report when it finishes. Nothing has to be typed, and the analysis runs on the machine it is started from. The fitting is done in a separate R process, so the page stays responsive and closing the browser tab does not stop it.</p>
+<p>The same workflow can be run from the console with</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">toxtools</span><span class="fu">::</span><span class="fu"><a href="reference/run_workbook.html">run_workbook</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+<p>or by opening <code>analysis/run_workbook.R</code> and running the whole file. Results are written to <code>outputs/</code>, one folder per workbook, holding the report, the fitted objects and the estimates as CSV files. Both <code>inputs/</code> and <code>outputs/</code> are excluded from version control, so a laboratory workbook placed in <code>inputs/</code> is never committed.</p>
+<p>Each sheet is searched for a row of column names giving a concentration column and a response column, so the title block, blank rows and blank columns of a laboratory form do not have to be counted or skipped, and columns holding values derived from the response are ignored. Sheets with no such block are skipped, and the report says why. <code>inputs/README.md</code> describes what a sheet needs to contain.</p>
+<p>The report gives, for each sheet: the data as they were read; the equations fitted and their model weights; the model-averaged N(S)EC, EC10 and EC50 with credible intervals, in the units recorded on the sheet; the model-averaged curve and the individual equations behind it; and the diagnostics, being R-hat, Bayesian R-squared, an over-dispersion test and the chain traces.</p>
+<p>Fitting takes roughly twenty to forty minutes per sheet. Each fit is saved as it completes and reused on a later run, so an interrupted run is resumed by calling <code><a href="reference/run_workbook.html">run_workbook()</a></code> again. A sheet that cannot be analysed does not stop the run: the reason is reported and the remaining sheets are still fitted.</p>
+<p>The functions can also be used one step at a time:</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">path</span> <span class="op">&lt;-</span> <span class="fu">toxtools</span><span class="fu">::</span><span class="fu"><a href="reference/find_workbook.html">find_workbook</a></span><span class="op">(</span><span class="op">)</span></span>
+<span><span class="fu">toxtools</span><span class="fu">::</span><span class="fu"><a href="reference/classify_sheets.html">classify_sheets</a></span><span class="op">(</span><span class="va">path</span><span class="op">)</span></span>
+<span><span class="va">sheet</span> <span class="op">&lt;-</span> <span class="fu">toxtools</span><span class="fu">::</span><span class="fu"><a href="reference/read_analysis_sheet.html">read_analysis_sheet</a></span><span class="op">(</span><span class="va">path</span>, <span class="st">"Copper Ref (4)"</span><span class="op">)</span></span>
+<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">toxtools</span><span class="fu">::</span><span class="fu"><a href="reference/fit_analysis_sheet.html">fit_analysis_sheet</a></span><span class="op">(</span><span class="va">sheet</span><span class="op">)</span></span>
+<span><span class="fu">toxtools</span><span class="fu">::</span><span class="fu"><a href="reference/workbook_estimates.html">workbook_estimates</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="fu">toxtools</span><span class="fu">::</span><span class="fu"><a href="reference/plot_workbook_fit.html">plot_workbook_fit</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
+<p><code>bayesnec</code>, <code>brms</code> and <code>readxl</code> are needed to fit, <code>ggplot2</code>, <code>quarto</code>, <code>knitr</code>, <code>rmarkdown</code> and <code>ragg</code> to report, and <code>shiny</code>, <code>bslib</code>, <code>DT</code> and <code>callr</code> for the app. All are declared in <code>Suggests</code>, so installing <code>toxtools</code> does not install them, and all are checked before any fitting starts rather than after it. The PDF report also needs a LaTeX installation; <code><a href="https://rdrr.io/pkg/tinytex/man/install_tinytex.html" class="external-link">tinytex::install_tinytex()</a></code> provides one, or choose the web page format instead.</p>
+</div>
+<div class="section level2">
 <h2 id="further-information">Further Information<a class="anchor" aria-label="anchor" href="#further-information"></a>
 </h2>
 <p><code>toxtools</code> is provided by the <a href="https://www.aims.gov.au" class="external-link">Australian Institute of Marine Science</a>.</p>
